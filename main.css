@@ -1,0 +1,7 @@
+.hordrawer{
+	display:flex;
+}
+
+.hordrawer p{
+	margin:8px;
+}
