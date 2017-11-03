@@ -1,3 +1,4 @@
+'use strict'
 var dist = require('vectors/dist-nd');
 var add = require('vectors/add-nd');
 var fs = require('fs');
@@ -5,26 +6,54 @@ var fs = require('fs');
 var values = {};
 var weightsize = 2;
 var biassize = 2;
-var sizes = [784,80,30,30,10];
 
-var main=function()
-{
+
+var main=function(){
+	$('.gobutton').click(function(event) {
+		//for the github version let's just do this once. And never change variables.
+		for (var i=0; i<1; i++)
+		{
+			mainPAUSE();
+		}
+	});
+	
 	//get a random image from the database.
 	values = dataread(Math.floor(Math.random()*60000));
 
-	//sizes is an array of the neural network layer sizes. The first must equal the number of inputs, for example mine is 784 because each image is 
-	//28x28px and outputs a single grayscale value, meaning it's 28x28=784 inputs. 
-	//the last number must equal the desired output. In mine I chose 10 because I want each value to correspond to the correct output, for example
-	//I want the handwritten digit 0 to be represented as [1,0,0,0,0,0,0,0,0,0,0]
 	network.init(sizes);
 	network.generateInputs();
 	network.run();
+	$(".run1here").text(network.getCost())
+}
+//sizes is an array of the neural network layer sizes. The first must equal the number of inputs, for example mine is 784 because each image is 
+//28x28px and outputs a single grayscale value, meaning it's 28x28=784 inputs. 
+//the last number must equal the desired output. In mine I chose 10 because I want each value to correspond to the correct output, for example
+//I want the handwritten digit 0 to be represented as [1,0,0,0,0,0,0,0,0,0,0]
+
+var sizes = [784,20,10,10,10];
+
+var mainPAUSE=function()
+{
+	
+
+	console.clear();
+	//now the climber has put his foot in a random place on the terrain. We need to store the height of his foot. 
+	network.store();
+	//next, the climber must put his other foot around the terrain near his current step, and feel around until he has a better spot.
+	var delts=network.makeNewBiases();
+	//ok so we assume he knows the direction to put his next foot.
+	// 
+	network.applydelts(delts,1);
+	network.run();
+	$(".run2here").text(network.getCost())
 }
 
 
 var network=
 {
 	neurons:[],
+	learnSpeedLimiter: 10,
+	historicalweightbias:[],
 	init:function(sizes){
 		//initialize function. This means create the neurons on each "level"
 		for (var i = 0; i<sizes.length; i++)
@@ -76,14 +105,14 @@ var network=
 
 		//results of last neurons have been completed. You should be able to read results. Expect noise until it learns. 
 		
-		outdest="hd"
-		console.log('Neurons.length: '+this.neurons.length)
+		var outdest="hd"
+		//console.log('Neurons.length: '+this.neurons.length)
 		for (var i = 1; i<this.neurons.length; i++)
 		{
 			//this just writes the output to a string of <p> elements 
 			outdest=".hd"+i;
 			//look in index.html for .hd1,2,3 etc
-			outstr=""
+			var outstr=""
 			//console.log('Neurons[i].length: '+this.neurons[i].length)
 			for (ii in this.neurons[i])
 			{
@@ -102,8 +131,134 @@ var network=
 			$('.hd4').html(outstr);
 		}
 
+	},
+	getCost:function(){
+		var opts=[];
+		for (var i in this.neurons[this.neurons.length-1])
+		{
+			//Basically this makes the outputs a lot easier to read by putting them into a variable.
+			opts[i]=this.neurons[this.neurons.length-1][i].result
+		}
+
+
+		return disttosuccess(values.label,opts)
+	},
+	store:function(){
+		//ok so with the run that we just made, we should have a list of weights and biases for each neuron. 
+		//we need to store all that first, so that future runs can use it. 
+		var r = {};
+
+		//"Cost" is kinda deceptive. It really means "success value". The lower the "Cost" is the closer we are to winning.
+		//however "Cost" is the standard name to describe this, so here we're stuck.
+
+		r.cost=this.getCost();
+
+		//now we need to encode the values that got us here. 
+		r.coords=[]
+		//really, this means that this is a spot in an n-dimensional coordinate plane. I know that sounds stupid. But what we're doing is making
+		//a hill-climbing algorithm but instead of a 2D terrain with a 3rd dimension representing height, it's a bajillion dimension thing with a bazzilion+1'th dimension representing cost.
+		//we're going to make a machine that can find its way around this "Hill" using the same techniques.
+		for (var i=1; i<this.neurons.length; i++)
+		{
+			for (var ii=0; ii<this.neurons[i].length; ii++)
+			{
+				//ok, we're at "each neuron" level.
+				for (var iii=0; iii<this.neurons[i][ii].inputs.length; iii++)
+				{
+					//push both the weight and the bias into this list.
+					r.coords.push(this.neurons[i][ii].inputs[iii].weight)
+					r.coords.push(this.neurons[i][ii].inputs[iii].bias)
+				}
+
+			}
+		}
+		console.log("The network is going to run a total of "+r.coords.length+" times")
+		//now we should have every single possible change to make in "coordinates" stored in the coords property. Whew. 
+		this.historicalweightbias.push(r);
+		//we now have the "Foot position" of this climber. 
+		//to avoid using "bazillion" we're calling the current r.coords.length "Z". It should number in the hundreds of thousands. 
+		//actual calculations show that it's 132,600 (Or something around there) for this NN. 
+	},
+	makeNewBiases:function(){
+		//delt[coordval] represents our best guess of the correct direction to go with that particular variable. 
+		var delt=[];
+
+		//rr=relevant record
+		var rr=this.historicalweightbias[this.historicalweightbias.length-1]
+
+		var ltot=rr.coords.length;
+
+		for (var i=0; i<rr.coords.length; i++)
+		{
+			var newcoords=rr.coords.slice();
+			//for each coordinate, we need to get the current value, add a random value (positive or negative) then feed it back into the network.
+
+			// how much we changed this value
+			var deltaval=(Math.random()*weightsize/2)-(weightsize/4);
+
+			newcoords[i]+=deltaval;
+			//now we need to feed it back into the network
+			this.pushCoordsToNetwork(newcoords)
+
+			this.run();
+
+			var newCost=this.getCost()
+
+			//now we have a change in cost that is associated with this particular changed value.
+			//let's say that the cost is now higher.
+			//this indicates this particular coordinate is in the wrong direction. We should ensure that delt[thisval] is in the opposite direction.
+			//so the "old" coordinate was 1, and the "new" coordinate is 2, making our deltacoord 1. Our old cost was 3, and now our cost is 4.
+			//making our deltacost 1. Thus delt[thisval] should be negative. 
+			var deltacost=rr.cost-newCost
+
+			//slope is rise over run kids. So what we've done here is established a direction to make the thing go. It's pointing in the direction the next
+			//step should take. 
+			delt[i]=(deltacost/deltaval);
+
+			console.log("Progress: "+i+"/"+ltot+" or "+((Math.round(((i*100)/ltot))*100)/100)+"%")
+		}
+
+		//after all of these runs (again 1 per coord, "Z")
+		return delt;
+	},
+	pushCoordsToNetwork:function(coords){
+		var v=0;
+		//V represents the postion in the coords array. 
+		for (var i=1; i<this.neurons.length; i++)
+		{
+			for (var ii=0; ii<this.neurons[i].length; ii++)
+			{
+				//ok, we're at "each neuron" level.
+				for (var iii=0; iii<this.neurons[i][ii].inputs.length; iii++)
+				{
+					this.neurons[i][ii].inputs[iii].weight=coords[v]
+					v+=1;
+					this.neurons[i][ii].inputs[iii].bias=coords[v]
+					v+=1;
+				}
+			}
+		}
+	},
+	applydelts:function(delts,lsl){
+		var v=0;
+		for (var i=1; i<this.neurons.length; i++)
+		{
+			for (var ii=0; ii<this.neurons[i].length; ii++)
+			{
+				//ok, we're at "each neuron" level.
+				for (var iii=0; iii<this.neurons[i][ii].inputs.length; iii++)
+				{
+					this.neurons[i][ii].inputs[iii].weight+=delts[v]/lsl;
+					v+=1;
+					this.neurons[i][ii].inputs[iii].bias+=delts[v]/lsl;
+					v+=1;
+				}
+			}
+		}
+
 	}
 }
+
 
 
 function sigmoid(z)
@@ -190,6 +345,28 @@ function dataread(image)
 	return imageData;
 }
 
+function disttosuccess(label,outputs){
+	var difvec=[]
+	var sv=successvector(label)
+	for (var i in outputs)
+	{
+		difvec[i]=outputs[i]-sv[i]
+	}
+
+	var sum=0;
+	//difvec is now a vector of the differences between expected and true. We need to turn this into a single value. Here comes distance.
+	for (var i in outputs)
+	{
+		//we're creating a distance. You do this by squaring the components of the vector. For example distance between (0,0) and (2,3) is sqrt(2^2+3^2).
+		//this holds to n dimensions. However the sqrt is only useful for finding the physical distance, we don't need to bother with that
+		//and it'll slow everything down so it's dispensed with. 
+		sum+=Math.pow(difvec[i],2);
+	}
+
+	//the lower sum is, the better off we are.
+	return sum;
+}
+
 function successvector(label){
 	//this also changes from project to project. Basically what we want a true result to look like.
 	var r = [];
@@ -230,7 +407,7 @@ function successvector(label){
 
 	if (label==7)
 	{
-		r=[0,0,0,0,1,0,0,1,0,0]
+		r=[0,0,0,0,0,0,0,1,0,0]
 	}
 
 	if (label==8)
@@ -245,5 +422,6 @@ function successvector(label){
 
 	return r;
 }
+
 
 $(document).ready(main)
