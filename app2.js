@@ -9,16 +9,31 @@ var biassize = 2;
 
 
 var main=function(){
+	//get a random image from the database.
+	values = dataread(Math.floor(Math.random()*60000));
+
 	$('.gobutton').click(function(event) {
+		//for the github version let's just do this once. And never change variables.
+		for (var i=0; i<800; i++)
+		{
+			//get a random image from the database.
+			values = dataread(Math.floor(Math.random()*60000));
+			mainPAUSE();
+
+			console.log("Testing #:"+values.label+", Global progress: "+((Math.round(((i*100)/800))*100)/100)+"%")
+		}
+	});
+
+	$('.1rungo').click(function(event) {
 		//for the github version let's just do this once. And never change variables.
 		for (var i=0; i<1; i++)
 		{
+			//get a random image from the database.
+			values = dataread(Math.floor(Math.random()*60000));
+			console.log("Testing #:"+values.label);
 			mainPAUSE();
 		}
 	});
-	
-	//get a random image from the database.
-	values = dataread(Math.floor(Math.random()*60000));
 
 	network.init(sizes);
 	network.generateInputs();
@@ -30,7 +45,7 @@ var main=function(){
 //the last number must equal the desired output. In mine I chose 10 because I want each value to correspond to the correct output, for example
 //I want the handwritten digit 0 to be represented as [1,0,0,0,0,0,0,0,0,0,0]
 
-var sizes = [784,20,10,10,10];
+var sizes = [784,20,10];
 
 var mainPAUSE=function()
 {
@@ -127,9 +142,11 @@ var network=
 			if (i==3)
 			$('.hd3').html(outstr);
 
-			if (i==4)
+			if (i==this.neurons.length-1)
 			$('.hd4').html(outstr);
 		}
+
+		$('.actualnumberhere').text(values.label);
 
 	},
 	getCost:function(){
@@ -215,7 +232,7 @@ var network=
 			//step should take. 
 			delt[i]=(deltacost/deltaval);
 
-			console.log("Progress: "+i+"/"+ltot+" or "+((Math.round(((i*100)/ltot))*100)/100)+"%")
+			console.log("Individual Progress: "+i+"/"+ltot+" or "+((Math.round(((i*100)/ltot))*100)/100)+"%")
 		}
 
 		//after all of these runs (again 1 per coord, "Z")
